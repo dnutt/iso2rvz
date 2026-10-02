@@ -1,0 +1,87 @@
+// Copyright 2026 iso2rvz contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+// iso2rvz: minimal stand-in for C++23 <expected>, used only when the standard library lacks it
+// (libstdc++ < 12, e.g. Ubuntu 22.04's GCC 11). This directory is added with -idirafter, so a
+// real <expected> always wins. Only the subset used by Dolphin's DiscIO is provided.
+
+#pragma once
+
+#include <exception>
+#include <type_traits>
+#include <utility>
+#include <variant>
+
+// libstdc++ 11 still declares the pre-C++17 function std::unexpected(), which would clash with
+// the class template below. Rename ours; std::unexpected{...} in DiscIO then resolves to it.
+#define unexpected iso2rvz_unexpected
+
+namespace std
+{
+template <class E>
+class unexpected
+{
+public:
+  constexpr explicit unexpected(const E& e) : m_error(e) {}
+  constexpr explicit unexpected(E&& e) : m_error(std::move(e)) {}
+
+  constexpr const E& error() const& noexcept { return m_error; }
+  constexpr E& error() & noexcept { return m_error; }
+  constexpr E&& error() && noexcept { return std::move(m_error); }
+
+private:
+  E m_error;
+};
+
+template <class E>
+unexpected(E) -> unexpected<E>;
+
+template <class T, class E>
+class expected
+{
+public:
+  using value_type = T;
+  using error_type = E;
+
+  constexpr expected() : m_storage(std::in_place_index<0>) {}
+
+  template <class U = T,
+            class = enable_if_t<is_constructible_v<T, U&&> &&
+                                !is_same_v<remove_cvref_t<U>, expected> &&
+                                !is_same_v<remove_cvref_t<U>, unexpected<E>>>>
+  constexpr expected(U&& value) : m_storage(std::in_place_index<0>, std::forward<U>(value))
+  {
+  }
+
+  template <class G>
+  constexpr expected(const unexpected<G>& e) : m_storage(std::in_place_index<1>, e.error())
+  {
+  }
+
+  template <class G>
+  constexpr expected(unexpected<G>&& e)
+      : m_storage(std::in_place_index<1>, std::move(e).error())
+  {
+  }
+
+  constexpr bool has_value() const noexcept { return m_storage.index() == 0; }
+  constexpr explicit operator bool() const noexcept { return has_value(); }
+
+  constexpr T& value() & { return std::get<0>(m_storage); }
+  constexpr const T& value() const& { return std::get<0>(m_storage); }
+  constexpr T&& value() && { return std::get<0>(std::move(m_storage)); }
+
+  constexpr T& operator*() & noexcept { return *std::get_if<0>(&m_storage); }
+  constexpr const T& operator*() const& noexcept { return *std::get_if<0>(&m_storage); }
+  constexpr T&& operator*() && noexcept { return std::move(*std::get_if<0>(&m_storage)); }
+  constexpr T* operator->() noexcept { return std::get_if<0>(&m_storage); }
+  constexpr const T* operator->() const noexcept { return std::get_if<0>(&m_storage); }
+
+  constexpr E& error() & noexcept { return *std::get_if<1>(&m_storage); }
+  constexpr const E& error() const& noexcept { return *std::get_if<1>(&m_storage); }
+  constexpr E&& error() && noexcept { return std::move(*std::get_if<1>(&m_storage)); }
+
+private:
+  std::variant<T, E> m_storage;
+};
+}  // namespace std

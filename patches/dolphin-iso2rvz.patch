@@ -1,0 +1,104 @@
+diff --git a/dolphin/Source/Core/Common/StringUtil.cpp b/dolphin/Source/Core/Common/StringUtil.cpp
+index 6a49847..c791fe6 100644
+--- a/dolphin/Source/Core/Common/StringUtil.cpp
++++ b/dolphin/Source/Core/Common/StringUtil.cpp
+@@ -650,6 +650,14 @@ ReEncodeString(std::basic_string_view<InputCharType> input)
+   Decoder decoder{std::span{input}.first(input_size)};
+ 
+   std::basic_string<ResultCharType> result;
++#if defined(ISO2RVZ) && !defined(__cpp_lib_string_resize_and_overwrite)
++  // iso2rvz: fallback for standard libraries without resize_and_overwrite (libstdc++ < 12).
++  result.resize(buffer_size);
++  auto* position = result.data();
++  while (decoder.RemainingCodeUnits() != 0)
++    position += encoder(decoder(), position);
++  result.resize(position - result.data());
++#else
+   result.resize_and_overwrite(buffer_size, [&](ResultCharType* buf, std::size_t) {
+     auto* position = buf;
+ 
+@@ -658,6 +666,7 @@ ReEncodeString(std::basic_string_view<InputCharType> input)
+ 
+     return position - buf;
+   });
++#endif
+ 
+   return result;
+ }
+diff --git a/dolphin/Source/Core/DiscIO/Blob.cpp b/dolphin/Source/Core/DiscIO/Blob.cpp
+index aad8b60..3d7ba80 100644
+--- a/dolphin/Source/Core/DiscIO/Blob.cpp
++++ b/dolphin/Source/Core/DiscIO/Blob.cpp
+@@ -15,7 +15,9 @@
+ 
+ #include "DiscIO/CISOBlob.h"
+ #include "DiscIO/CompressedBlob.h"
++#ifndef ISO2RVZ
+ #include "DiscIO/DirectoryBlob.h"
++#endif
+ #include "DiscIO/FileBlob.h"
+ #include "DiscIO/NFSBlob.h"
+ #include "DiscIO/SplitFileBlob.h"
+@@ -242,8 +244,10 @@ std::unique_ptr<BlobReader> CreateBlobReader(const std::string& filename)
+   case NFS_MAGIC:
+     return NFSFileReader::Create(std::move(file), filename);
+   default:
++#ifndef ISO2RVZ
+     if (auto directory_blob = DirectoryBlobReader::Create(filename))
+       return std::move(directory_blob);
++#endif
+     if (auto split_blob = SplitPlainFileReader::Create(filename))
+       return std::move(split_blob);
+ 
+diff --git a/dolphin/Source/Core/DiscIO/Volume.cpp b/dolphin/Source/Core/DiscIO/Volume.cpp
+index cbed3ac..646987d 100644
+--- a/dolphin/Source/Core/DiscIO/Volume.cpp
++++ b/dolphin/Source/Core/DiscIO/Volume.cpp
+@@ -18,7 +18,9 @@
+ #include "Common/Crypto/SHA1.h"
+ #include "Common/StringUtil.h"
+ 
++#ifndef ISO2RVZ
+ #include "Core/Config/MainSettings.h"
++#endif
+ #include "Core/IOS/ES/Formats.h"
+ 
+ #include "DiscIO/Blob.h"
+@@ -27,7 +29,9 @@
+ #include "DiscIO/Enums.h"
+ #include "DiscIO/VolumeDisc.h"
+ #include "DiscIO/VolumeGC.h"
++#ifndef ISO2RVZ
+ #include "DiscIO/VolumeWad.h"
++#endif
+ #include "DiscIO/VolumeWii.h"
+ 
+ namespace DiscIO
+@@ -138,6 +142,7 @@ std::unique_ptr<VolumeDisc> CreateDisc(const std::string& path)
+   return CreateDisc(CreateBlobReader(path));
+ }
+ 
++#ifndef ISO2RVZ
+ std::unique_ptr<VolumeDisc> CreateDiscForCore(const std::string& path)
+ {
+   auto reader = CreateBlobReader(path);
+@@ -172,6 +177,7 @@ std::unique_ptr<VolumeWAD> CreateWAD(const std::string& path)
+ {
+   return CreateWAD(CreateBlobReader(path));
+ }
++#endif
+ 
+ std::unique_ptr<Volume> CreateVolume(std::unique_ptr<BlobReader> reader)
+ {
+@@ -179,9 +185,11 @@ std::unique_ptr<Volume> CreateVolume(std::unique_ptr<BlobReader> reader)
+   if (disc)
+     return disc;
+ 
++#ifndef ISO2RVZ
+   std::unique_ptr<VolumeWAD> wad = TryCreateWAD(reader);
+   if (wad)
+     return wad;
++#endif
+ 
+   return nullptr;
+ }
