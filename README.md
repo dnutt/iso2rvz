@@ -5,6 +5,9 @@ Dolphin's RVZ format (or WIA, GCZ, plain ISO). It is built from Dolphin's own `D
 code, so its output is what Dolphin's "Convert File..." dialog produces, but it doesn't need
 the emulator, Qt or a Dolphin user directory.
 
+Langerz82's DolphinConvert patch was used:
+https://gist.github.com/Langerz82/05095b7431c4b7935416714ba9ce6bfe
+
 ```
 iso2rvz game.iso                      # -> game.rvz (zstd level 5, 128 KiB blocks)
 iso2rvz -c lzma -l 9 -s 2M game.iso   # smaller, much slower to create and to read
